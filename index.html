@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Meta Ads Performance Report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0f0f11;
+    --surface: #17171a;
+    --surface2: #1e1e22;
+    --border: rgba(255,255,255,0.07);
+    --border2: rgba(255,255,255,0.12);
+    --text: #f0f0f2;
+    --muted: #888890;
+    --accent: #4f8fff;
+    --accent2: #7c5cfc;
+    --green: #3ecf8e;
+    --red: #f06060;
+    --font: 'DM Sans', sans-serif;
+    --mono: 'DM Mono', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; }
+  body { min-height: 100vh; padding: 0; }
+
+  /* Layout */
+  .shell { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+  .sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 28px 20px; display: flex; flex-direction: column; gap: 6px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+  .main { padding: 32px 36px; overflow: hidden; }
+
+  /* Sidebar */
+  .logo { font-size: 13px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+  .logo span { color: var(--accent); }
+  .section-label { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin: 16px 0 8px; padding: 0 8px; }
+  .filter-block { margin-bottom: 4px; }
+  .filter-block label { font-size: 11px; color: var(--muted); display: block; margin-bottom: 4px; padding: 0 2px; }
+  .filter-block input[type="date"] {
+    width: 100%; background: var(--surface2); border: 1px solid var(--border2); border-radius: 6px;
+    color: var(--text); font-family: var(--mono); font-size: 12px; padding: 7px 10px;
+    outline: none; color-scheme: dark;
+  }
+  .filter-block input[type="date"]:focus { border-color: var(--accent); }
+
+  /* Multi-select dropdown */
+  .ms-wrap { position: relative; }
+  .ms-trigger {
+    width: 100%; background: var(--surface2); border: 1px solid var(--border2); border-radius: 6px;
+    color: var(--text); font-family: var(--font); font-size: 12px; padding: 7px 28px 7px 10px;
+    text-align: left; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    position: relative;
+  }
+  .ms-trigger::after { content:''; position:absolute; right:10px; top:50%; transform:translateY(-50%); border:4px solid transparent; border-top:5px solid var(--muted); }
+  .ms-trigger.open::after { border-top:none; border-bottom:5px solid var(--muted); transform:translateY(-80%); }
+  .ms-trigger:hover { border-color: var(--border2); background: #222226; }
+  .ms-dropdown {
+    display: none; position: fixed; background: #222226; border: 1px solid var(--border2);
+    border-radius: 8px; z-index: 1000; max-height: 220px; overflow-y: auto;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5); min-width: 200px;
+  }
+  .ms-dropdown.open { display: block; }
+  .ms-search-wrap { padding: 8px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: #222226; }
+  .ms-search-wrap input { width: 100%; background: var(--surface); border: 1px solid var(--border2); border-radius: 5px; color: var(--text); font-size: 12px; padding: 5px 8px; font-family: var(--font); outline: none; }
+  .ms-option { display: flex; align-items: center; gap: 8px; padding: 7px 12px; font-size: 12px; cursor: pointer; color: var(--text); white-space: nowrap; }
+  .ms-option:hover { background: var(--surface2); }
+  .ms-option.all-opt { border-bottom: 1px solid var(--border); color: var(--muted); font-size: 11px; position: sticky; top: 0; background: #222226; }
+  .ms-option input[type="checkbox"] { accent-color: var(--accent); width: 13px; height: 13px; flex-shrink: 0; }
+  .ms-badge { display:inline-flex; align-items:center; justify-content:center; background: rgba(79,143,255,0.15); color: var(--accent); border-radius: 10px; font-size: 10px; font-weight: 600; min-width: 16px; height: 16px; padding: 0 4px; margin-left: 4px; }
+
+  .fetch-btn {
+    margin-top: auto; padding: 10px; background: var(--accent); color: #fff;
+    border: none; border-radius: 8px; font-family: var(--font); font-size: 13px;
+    font-weight: 600; cursor: pointer; letter-spacing: 0.02em; transition: opacity 0.15s;
+  }
+  .fetch-btn:hover { opacity: 0.85; }
+  .fetch-btn:disabled { opacity: 0.4; cursor: default; }
+
+
+
+  /* Main header */
+  .page-header { display: flex; align-items: baseline; gap: 16px; margin-bottom: 28px; }
+  .page-title { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
+  .page-sub { font-size: 13px; color: var(--muted); }
+
+  /* Summary cards */
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 32px; }
+  .s-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+  .s-card .s-label { font-size: 11px; color: var(--muted); font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 8px; }
+  .s-card .s-value { font-size: 22px; font-weight: 500; font-family: var(--mono); letter-spacing: -0.02em; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 0; }
+  .tab-btn {
+    padding: 8px 16px; font-size: 13px; font-weight: 500; color: var(--muted);
+    background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer;
+    font-family: var(--font); margin-bottom: -1px; transition: color 0.15s;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--text); border-bottom-color: var(--accent); }
+
+  /* Table */
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th { padding: 11px 14px; text-align: left; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); background: var(--surface); white-space: nowrap; border-bottom: 1px solid var(--border); }
+  tbody td { padding: 10px 14px; border-bottom: 1px solid var(--border); color: var(--text); white-space: nowrap; font-family: var(--mono); font-size: 12px; }
+  tbody td:first-child { font-family: var(--font); font-size: 13px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: var(--surface2); }
+  tfoot td { padding: 10px 14px; font-weight: 600; background: var(--surface); border-top: 1px solid var(--border2); font-family: var(--mono); font-size: 12px; color: var(--text); white-space: nowrap; }
+  tfoot td:first-child { font-family: var(--font); }
+  th[data-r], td[data-r] { text-align: right; }
+
+  /* Creative preview */
+  .thumb { width: 48px; height: 48px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); cursor: pointer; display: block; transition: transform 0.15s; }
+  .thumb:hover { transform: scale(1.08); }
+  .thumb-ph { width: 48px; height: 48px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 18px; }
+  .preview-col { width: 64px; }
+
+  /* Modal */
+  .modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 2000; align-items: center; justify-content: center; }
+  .modal-bg.open { display: flex; }
+  .modal-box { background: var(--surface); border: 1px solid var(--border2); border-radius: 12px; padding: 20px; max-width: 680px; width: 92%; position: relative; }
+  .modal-close { position: absolute; top: 12px; right: 14px; background: none; border: none; color: var(--muted); font-size: 22px; cursor: pointer; line-height: 1; }
+  .modal-img { width: 100%; border-radius: 8px; display: block; }
+  .modal-video { width: 100%; border-radius: 8px; display: block; outline: none; background:#000; max-height: 75vh; }
+  .thumb-wrap { position: relative; display: inline-block; }
+  .play-badge { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+  .play-badge svg { filter: drop-shadow(0 1px 4px rgba(0,0,0,0.6)); }
+  .modal-name { font-size: 11px; color: var(--muted); margin-top: 12px; word-break: break-all; font-family: var(--mono); }
+
+  /* Status */
+  .status { padding: 48px; text-align: center; color: var(--muted); font-size: 14px; }
+  .status.err { color: var(--red); }
+  .dot-loader { display: inline-flex; gap: 5px; }
+  .dot-loader span { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: blink 1.2s infinite both; }
+  .dot-loader span:nth-child(2) { animation-delay: 0.2s; }
+  .dot-loader span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes blink { 0%,80%,100%{opacity:0.2} 40%{opacity:1} }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="logo">Meta Ads <span>Report</span></div>
+
+
+
+    <div class="section-label">Date range</div>
+    <div class="filter-block">
+      <label>From</label>
+      <input type="date" id="date-from" />
+    </div>
+    <div class="filter-block">
+      <label>To</label>
+      <input type="date" id="date-to" />
+    </div>
+
+    <div class="section-label">Filters</div>
+    <div class="filter-block">
+      <label>Campaign</label>
+      <div class="ms-wrap" id="ms-campaign"></div>
+    </div>
+    <div class="filter-block">
+      <label>Creative name</label>
+      <div class="ms-wrap" id="ms-creative"></div>
+    </div>
+    <div class="filter-block">
+      <label>Creative format</label>
+      <div class="ms-wrap" id="ms-format"></div>
+    </div>
+    <div class="filter-block">
+      <label>Copy name</label>
+      <div class="ms-wrap" id="ms-copy"></div>
+    </div>
+    <div class="filter-block">
+      <label>Landing page</label>
+      <div class="ms-wrap" id="ms-lp"></div>
+    </div>
+    <div class="filter-block">
+      <label>Product</label>
+      <div class="ms-wrap" id="ms-product"></div>
+    </div>
+    <div class="filter-block">
+      <label>Creative batch</label>
+      <div class="ms-wrap" id="ms-batch"></div>
+    </div>
+    <div class="filter-block">
+      <label>Creator vs BAU</label>
+      <div class="ms-wrap" id="ms-creatorType"></div>
+    </div>
+
+    <div style="height:16px"></div>
+    <button class="fetch-btn" id="fetch-btn" onclick="fetchData()">Fetch data</button>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main">
+    <div class="page-header">
+      <div class="page-title">Performance Report</div>
+      <div class="page-sub" id="page-sub">Account 920960531290408</div>
+    </div>
+
+    <div class="summary-grid" id="summary-grid" style="display:none"></div>
+
+    <div id="tabs-area" style="display:none">
+      <div class="tabs">
+        <button class="tab-btn active" onclick="showTab('day')">By day</button>
+        <button class="tab-btn" onclick="showTab('week')">By week</button>
+        <button class="tab-btn" onclick="showTab('campaign')">By campaign</button>
+        <button class="tab-btn" onclick="showTab('creative')">By creative</button>
+        <button class="tab-btn" onclick="showTab('copy')">By copy</button>
+        <button class="tab-btn" onclick="showTab('lp')">By landing page</button>
+        <button class="tab-btn" onclick="showTab('product')">By product</button>
+        <button class="tab-btn" onclick="showTab('batch')">By creative batch</button>
+        <button class="tab-btn" onclick="showTab('creatorType')">Creator vs BAU</button>
+      </div>
+      <div id="table-area"></div>
+    </div>
+
+    <div class="status" id="status-msg">Enter your access token, set a date range, and click Fetch data.</div>
+  </main>
+</div>
+
+<!-- Modal -->
+<div class="modal-bg" id="modal" onclick="closeModal()">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <button class="modal-close" onclick="closeModal()">&#215;</button>
+    <div id="modal-media"></div>
+    <div class="modal-name" id="modal-name"></div>
+  </div>
+</div>
+
+<script>
+const AD_ACCOUNT_ID = '920960531290408';
+const CUSTOM_CONV_ID = '1177969260913242';
+const BASE = 'https://graph.facebook.com/v19.0';
+
+let rawData = [];
+let currentTab = 'day';
+let adIdsByCreative = {};
+let creativeCache = {}; // stores {type:'image'|'video', url:string, thumbUrl:string|null}
+
+const FILTER_KEYS = ['campaign','creative','format','copy','lp','product','batch','creatorType'];
+const selections = Object.fromEntries(FILTER_KEYS.map(k=>[k,new Set()]));
+
+// ── Ad name parser ────────────────────────────────────────────────
+// Market_AudienceType_Audience_Placement_Gender_Age_Creative_Format_Copy_OS_Opt_LP_Bid_ProductSet_Source
+function parseAdName(n) {
+  if (!n) return {creative:'',format:'',copy:'',lp:'',product:'',batch:''};
+  const p = n.split('_');
+  const creativeName = p[6]||'';
+  // Creative name structure: type-market-product-batch-...  (dash-delimited)
+  // e.g. vid-US-Shirts-00268-SITC-...
+  const cp = creativeName.split('-');
+  const product = cp[2]||'';
+  const batch   = cp[3]||'';
+  const creatorType = creativeName.toLowerCase().includes('contentcreator') ? 'Content Creator' : 'BAU';
+  return { creative: creativeName, format: p[7]||'', copy: p[8]||'', lp: p[11]||'', product, batch, creatorType };
+}
+
+// ── Dates ─────────────────────────────────────────────────────────
+function initDates() {
+  const today = new Date();
+  const from = new Date(today); from.setDate(today.getDate()-29);
+  const tf = from.toISOString().slice(0,10), tt = today.toISOString().slice(0,10);
+  document.getElementById('date-from').value = tf;
+  document.getElementById('date-to').value = tt;
+}
+initDates();
+
+// ── Graph API helper ──────────────────────────────────────────────
+// Read token from URL ?token=... param
+const _token = (()=>{ try { return new URLSearchParams(window.location.search).get('token')||''; } catch{ return ''; } })();
+function token() { return _token; }
+
+async function graphGet(path, params={}) {
+  params.access_token = token();
+  const qs = Object.entries(params).map(([k,v])=>`${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+  const r = await fetch(`${BASE}/${path}?${qs}`);
+  const j = await r.json();
+  if (j.error) throw new Error(j.error.message);
+  return j;
+}
+
+async function fetchAllPages(path, params={}) {
+  let all = [];
+  let j = await graphGet(path, params);
+  all = all.concat(j.data||[]);
+  let next = j.paging?.next; let pg=0;
+  while(next && pg<40) {
+    setStatus('Loading page '+(pg+2)+'…');
+    const r2 = await fetch(next); const j2 = await r2.json();
+    if(j2.error) break;
+    all = all.concat(j2.data||[]);
+    next = j2.paging?.next; pg++;
+  }
+  return all;
+}
+
+// ── Fetch data ────────────────────────────────────────────────────
+async function fetchData() {
+  if (!token()) {
+    setStatus('No access token found. Please open this page with ?token=YOUR_TOKEN in the URL.', true);
+    return;
+  }
+  const df = document.getElementById('date-from').value;
+  const dt = document.getElementById('date-to').value;
+  if (!df||!dt) { alert('Please select both dates.'); return; }
+
+  const btn = document.getElementById('fetch-btn');
+  btn.disabled=true; btn.textContent='Loading…';
+  setStatus('<div class="dot-loader"><span></span><span></span><span></span></div>');
+  document.getElementById('summary-grid').style.display='none';
+  document.getElementById('tabs-area').style.display='none';
+  creativeCache={}; adIdsByCreative={};
+
+  try {
+    const rows = await fetchAllPages(`act_${AD_ACCOUNT_ID}/insights`, {
+      level:'ad', time_increment:1,
+      time_range: JSON.stringify({since:df,until:dt}),
+      fields:'date_start,campaign_name,ad_name,ad_id,spend,impressions,inline_link_clicks,actions',
+      action_attribution_windows:'["1d_click"]',
+      limit:500
+    });
+
+    rawData = rows.map(row=>{
+      const p = parseAdName(row.ad_name);
+      const spend=parseFloat(row.spend)||0, impressions=parseInt(row.impressions)||0, clicks=parseInt(row.inline_link_clicks)||0;
+      let orders=0;
+      if(row.actions){
+        const c=row.actions.find(a=>a.action_type?.includes(CUSTOM_CONV_ID));
+        if(c) orders=parseFloat(c['1d_click']??c.value??0);
+      }
+      if(p.creative&&row.ad_id&&!adIdsByCreative[p.creative]) adIdsByCreative[p.creative]=row.ad_id;
+      return {date:row.date_start, campaign:row.campaign_name||'', adId:row.ad_id||'', creative:p.creative, format:p.format, copy:p.copy, lp:p.lp, product:p.product, batch:p.batch, creatorType:p.creatorType, spend, impressions, clicks, orders};
+    });
+
+    if(!rawData.length){ setStatus('No data returned for this date range.',true); return; }
+    document.getElementById('page-sub').textContent = `Account ${AD_ACCOUNT_ID} · ${df} → ${dt} · ${rawData.length} rows`;
+    populateDropdowns();
+    renderAll();
+  } catch(e) {
+    setStatus('Error: '+e.message, true);
+  } finally {
+    btn.disabled=false; btn.textContent='Fetch data';
+  }
+}
+
+// ── Creative thumbnails ───────────────────────────────────────────
+async function getCreativeAsset(creativeName, adId) {
+  if(creativeCache[creativeName]!==undefined) return creativeCache[creativeName];
+  if(!adId){ creativeCache[creativeName]=null; return null; }
+
+  try {
+    const adData = await graphGet(adId, {
+      fields:'creative{id,image_hash,image_url,thumbnail_url,object_story_spec,asset_feed_spec,video_id}'
+    });
+    const cr = adData?.creative;
+    if(!cr){ creativeCache[creativeName]=null; return null; }
+
+    const oss = cr.object_story_spec;
+
+    // ── VIDEO: collect all possible video IDs ─────────────────────
+    const videoId =
+      cr.video_id ||
+      oss?.video_data?.video_id ||
+      oss?.link_data?.child_attachments?.[0]?.video_id ||
+      cr.asset_feed_spec?.videos?.[0]?.video_id ||
+      null;
+
+    if(videoId){
+      try {
+        // Request source + multiple format URLs + best thumbnails
+        const vid = await graphGet(videoId, {
+          fields:'source,format{picture,video_url,width},thumbnails{uri,width,height},permalink_url'
+        });
+
+        // Pick widest thumbnail for table cell
+        const thumbs = (vid.thumbnails?.data||[]).slice().sort((a,b)=>(b.width||0)-(a.width||0));
+        const thumbUrl = thumbs[0]?.uri || cr.thumbnail_url || null;
+
+        // Try to get the highest-res direct MP4 URL
+        // format array contains SD/HD/FullHD variants — pick widest
+        let videoUrl = null;
+        if(vid.format?.length){
+          const formats = vid.format.slice().sort((a,b)=>(b.width||0)-(a.width||0));
+          videoUrl = formats[0]?.video_url || null;
+        }
+        // Fall back to source (may need token appended)
+        if(!videoUrl && vid.source){
+          // Append access token so CDN allows the request
+          const sep = vid.source.includes('?') ? '&' : '?';
+          videoUrl = vid.source + sep + 'access_token=' + encodeURIComponent(token());
+        }
+
+        if(videoUrl){
+          const asset = {type:'video', url:videoUrl, thumbUrl, videoId};
+          creativeCache[creativeName]=asset; return asset;
+        }
+
+        // If we got a permalink but no direct URL, store as permalink fallback
+        if(vid.permalink_url){
+          const asset = {type:'video-link', url:vid.permalink_url, thumbUrl, videoId};
+          creativeCache[creativeName]=asset; return asset;
+        }
+      } catch(e){ console.warn('Video fetch failed for', videoId, e); }
+    }
+
+    // ── IMAGE ──────────────────────────────────────────────────────
+    const tryHash = async (hash) => {
+      if(!hash) return null;
+      try {
+        const d = await graphGet(`act_${AD_ACCOUNT_ID}/adimages`, {hashes:JSON.stringify([hash]),fields:'url'});
+        return d?.data?.[0]?.url || null;
+      } catch { return null; }
+    };
+
+    let imgUrl = await tryHash(cr.image_hash);
+    if(!imgUrl) imgUrl = cr.image_url || null;
+    if(!imgUrl && oss) imgUrl = oss.link_data?.image_url || oss.photo_data?.url || null;
+    if(!imgUrl){ const fh = cr.asset_feed_spec?.images?.[0]?.hash; if(fh) imgUrl = await tryHash(fh); }
+    if(!imgUrl) imgUrl = cr.thumbnail_url || null;
+
+    const asset = imgUrl ? {type:'image', url:imgUrl, thumbUrl:imgUrl} : null;
+    creativeCache[creativeName]=asset; return asset;
+
+  } catch(e){ console.error('getCreativeAsset error', e); creativeCache[creativeName]=null; return null; }
+}
+
+async function loadThumb(idx, name, adId) {
+  const asset = await getCreativeAsset(name, adId);
+  const cell = document.getElementById('th-'+idx);
+  if(!cell) return;
+  if(asset){
+    const safeName = name.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    if(asset.type==='video' || asset.type==='video-link'){
+      const th = asset.thumbUrl||'';
+      const mtype = asset.type;
+      cell.innerHTML = '<div class="thumb-wrap">'
+        + '<img class="thumb" src="' + th + '" alt="" style="cursor:pointer" onclick="openModal(\'' + mtype + '\',\'' + asset.url.replace(/'/g,"\\'") + '\',\'' + safeName + '\')" />'
+        + '<div class="play-badge"><svg width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="11" fill="rgba(0,0,0,0.45)"/><polygon points="8.5,7 16,11 8.5,15" fill="white"/></svg></div>'
+        + '</div>';
+    } else {
+      cell.innerHTML = '<img class="thumb" src="' + asset.url + '" alt="" onclick="openModal(\'image\',\'' + asset.url.replace(/'/g,"\\'") + '\',\'' + safeName + '\')" />';
+    }
+  } else {
+    cell.innerHTML='<div class="thumb-ph">&#9633;</div>';
+  }
+}
+
+// ── Dropdowns ─────────────────────────────────────────────────────
+function populateDropdowns() {
+  FILTER_KEYS.forEach(k=>{
+    selections[k].clear();
+    const opts=[...new Set(rawData.map(r=>r[k]).filter(Boolean))].sort();
+    buildDropdown(k, opts);
+  });
+}
+
+function buildDropdown(key, opts) {
+  const wrap=document.getElementById('ms-'+key);
+  wrap.innerHTML='';
+  const hasSearch=opts.length>5;
+
+  const trigger=document.createElement('button');
+  trigger.className='ms-trigger'; trigger.id='mst-'+key; trigger.type='button';
+  trigger.textContent='All';
+  trigger.onclick=e=>{e.stopPropagation();toggleDD(key);};
+  wrap.appendChild(trigger);
+
+  const dd=document.createElement('div');
+  dd.className='ms-dropdown'; dd.id='msd-'+key;
+  dd.onclick=e=>e.stopPropagation();
+
+  if(hasSearch){
+    const sw=document.createElement('div'); sw.className='ms-search-wrap';
+    sw.innerHTML=`<input type="text" placeholder="Search…" oninput="filterDD('${key}',this.value)"/>`;
+    dd.appendChild(sw);
+  }
+
+  const allDiv=document.createElement('div');
+  allDiv.className='ms-option all-opt';
+  allDiv.innerHTML=`<input type="checkbox" id="ca-${key}" checked onchange="toggleAll('${key}',this.checked)"/><span>Select all</span>`;
+  dd.appendChild(allDiv);
+
+  opts.forEach(opt=>{
+    const d=document.createElement('div'); d.className='ms-option'; d.dataset.value=opt;
+    d.innerHTML=`<input type="checkbox" checked onchange="toggleOpt('${key}',this.closest('.ms-option').dataset.value,this.checked)"/><span title="${opt}">${opt}</span>`;
+    dd.appendChild(d);
+  });
+
+  // Position dropdown on open
+  wrap.appendChild(dd);
+  updateLabel(key,opts);
+}
+
+function toggleDD(key) {
+  const dd=document.getElementById('msd-'+key), tr=document.getElementById('mst-'+key);
+  const isOpen=dd.classList.contains('open');
+  closeAllDD();
+  if(!isOpen){
+    dd.classList.add('open'); tr.classList.add('open');
+    // Position
+    const rect=tr.getBoundingClientRect();
+    dd.style.top=(rect.bottom+4)+'px';
+    dd.style.left=rect.left+'px';
+    dd.style.width=Math.max(rect.width,200)+'px';
+  }
+}
+function closeAllDD(){
+  document.querySelectorAll('.ms-dropdown.open').forEach(d=>d.classList.remove('open'));
+  document.querySelectorAll('.ms-trigger.open').forEach(t=>t.classList.remove('open'));
+}
+document.addEventListener('click', closeAllDD);
+
+function filterDD(key, q){
+  document.querySelectorAll(`#msd-${key} .ms-option:not(.all-opt)`).forEach(o=>{
+    o.style.display=o.dataset.value.toLowerCase().includes(q.toLowerCase())?'':'none';
+  });
+}
+function toggleAll(key,checked){
+  selections[key].clear();
+  document.querySelectorAll(`#msd-${key} .ms-option:not(.all-opt) input`).forEach(cb=>cb.checked=checked);
+  if(!checked) getAllOpts(key).forEach(v=>selections[key].add(v));
+  updateLabel(key,getAllOpts(key));
+  if(rawData.length) renderAll();
+}
+function toggleOpt(key,val,checked){
+  if(checked) selections[key].delete(val); else selections[key].add(val);
+  const a=document.getElementById('ca-'+key); if(a) a.checked=!selections[key].size;
+  updateLabel(key,getAllOpts(key));
+  if(rawData.length) renderAll();
+}
+function getAllOpts(key){
+  return [...document.querySelectorAll(`#msd-${key} .ms-option:not(.all-opt)`)].map(o=>o.dataset.value);
+}
+function updateLabel(key,opts){
+  const sel=selections[key], t=document.getElementById('mst-'+key); if(!t) return;
+  if(!sel.size||!opts.length){ t.textContent='All'; return; }
+  const active=opts.length-sel.size;
+  t.innerHTML=`${active} of ${opts.length} <span class="ms-badge">${active}</span>`;
+}
+
+// ── Data helpers ──────────────────────────────────────────────────
+function fmt(n,d=0){ if(n==null||isNaN(n))return'—'; return Number(n).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}); }
+function fmtC(n){ return(n==null||isNaN(n))?'—':'$'+fmt(n,2); }
+function fmtP(n){ return(n==null||isNaN(n))?'—':fmt(n,2)+'%'; }
+function safe(a,b){ return b?a/b:0; }
+
+function getFiltered(){
+  return rawData.filter(r=>
+    (!selections.campaign.size    ||!selections.campaign.has(r.campaign))&&
+    (!selections.creative.size    ||!selections.creative.has(r.creative))&&
+    (!selections.format.size      ||!selections.format.has(r.format))&&
+    (!selections.copy.size        ||!selections.copy.has(r.copy))&&
+    (!selections.lp.size          ||!selections.lp.has(r.lp))&&
+    (!selections.product.size     ||!selections.product.has(r.product))&&
+    (!selections.batch.size       ||!selections.batch.has(r.batch))&&
+    (!selections.creatorType.size ||!selections.creatorType.has(r.creatorType))
+  );
+}
+
+function aggregate(rows,keyFn,withAdId){
+  const map={};
+  rows.forEach(r=>{
+    const k=keyFn(r);
+    if(!map[k]) map[k]={key:k,spend:0,impressions:0,clicks:0,orders:0,adId:withAdId?r.adId:null};
+    map[k].spend+=r.spend; map[k].impressions+=r.impressions; map[k].clicks+=r.clicks; map[k].orders+=r.orders;
+  });
+  return Object.values(map).map(g=>({...g,
+    cpm:safe(g.spend,g.impressions/1000),cpc:safe(g.spend,g.clicks),
+    ctr:safe(g.clicks*100,g.impressions),cpOrder:safe(g.spend,g.orders),
+    cvr:safe(g.orders*100,g.clicks)
+  }));
+}
+
+function weekStart(s){
+  const d=new Date(s+'T00:00:00'); d.setDate(d.getDate()-d.getDay()); return d.toISOString().slice(0,10);
+}
+
+// ── Render ────────────────────────────────────────────────────────
+function renderAll(){
+  const f=getFiltered();
+  renderSummary(f);
+  renderTable(f,currentTab);
+  document.getElementById('summary-grid').style.display='grid';
+  document.getElementById('tabs-area').style.display='block';
+  document.getElementById('status-msg').style.display='none';
+}
+
+function renderSummary(rows){
+  const s=rows.reduce((a,r)=>a+r.spend,0),i=rows.reduce((a,r)=>a+r.impressions,0),
+        c=rows.reduce((a,r)=>a+r.clicks,0),o=rows.reduce((a,r)=>a+r.orders,0);
+  document.getElementById('summary-grid').innerHTML=[
+    ['Spend',fmtC(s)],['Impressions',fmt(i)],['CPM',fmtC(safe(s,i/1000))],
+    ['Link clicks',fmt(c)],['Cost / click',fmtC(safe(s,c))],['CTR',fmtP(safe(c*100,i))],
+    ['New cust. orders',fmt(o,1)],['Cost / order',fmtC(safe(s,o))],['Conv. rate',fmtP(safe(o*100,c))]
+  ].map(([l,v])=>`<div class="s-card"><div class="s-label">${l}</div><div class="s-value">${v}</div></div>`).join('');
+}
+
+const COLS=[
+  {k:'spend',    l:'Spend',           f:fmtC},
+  {k:'impressions',l:'Impressions',   f:v=>fmt(v)},
+  {k:'cpm',      l:'CPM',             f:fmtC},
+  {k:'clicks',   l:'Link clicks',     f:v=>fmt(v)},
+  {k:'cpc',      l:'Cost / click',    f:fmtC},
+  {k:'ctr',      l:'CTR',             f:fmtP},
+  {k:'orders',   l:'New cust. orders',f:v=>fmt(v,1)},
+  {k:'cpOrder',  l:'Cost / order',    f:fmtC},
+  {k:'cvr',      l:'Conv. rate',      f:fmtP}
+];
+
+function renderTable(rows,tab){
+  const cfg={
+    day:      {fn:r=>r.date,               lbl:'Date',               sort:(a,b)=>a.key<b.key?-1:1, adId:false},
+    week:     {fn:r=>weekStart(r.date),    lbl:'Week starting (Sun)', sort:(a,b)=>a.key<b.key?-1:1, adId:false},
+    campaign: {fn:r=>r.campaign,           lbl:'Campaign',           sort:(a,b)=>b.spend-a.spend,   adId:false},
+    creative: {fn:r=>r.creative||'(none)', lbl:'Creative name',      sort:(a,b)=>b.spend-a.spend,   adId:true},
+    copy:     {fn:r=>r.copy||'(none)',     lbl:'Copy name',          sort:(a,b)=>b.spend-a.spend,   adId:false},
+    lp:       {fn:r=>r.lp||'(none)',       lbl:'Landing page',       sort:(a,b)=>b.spend-a.spend,   adId:false},
+    product:  {fn:r=>r.product||'(none)',  lbl:'Product',             sort:(a,b)=>b.spend-a.spend,   adId:false},
+    batch:    {fn:r=>r.batch||'(none)',    lbl:'Creative batch',      sort:(a,b)=>b.spend-a.spend,   adId:false},
+    creatorType:{fn:r=>r.creatorType||'BAU', lbl:'Creative type',     sort:(a,b)=>b.spend-a.spend,   adId:false}
+  };
+  const {fn,lbl,sort,adId:wAd}=cfg[tab];
+  const grouped=aggregate(rows,fn,wAd).sort(sort);
+
+  if(!grouped.length){ document.getElementById('table-area').innerHTML='<div class="status">No data for this view.</div>'; return; }
+
+  const tot=grouped.reduce((a,r)=>({spend:a.spend+r.spend,impressions:a.impressions+r.impressions,clicks:a.clicks+r.clicks,orders:a.orders+r.orders}),{spend:0,impressions:0,clicks:0,orders:0});
+  Object.assign(tot,{cpm:safe(tot.spend,tot.impressions/1000),cpc:safe(tot.spend,tot.clicks),ctr:safe(tot.clicks*100,tot.impressions),cpOrder:safe(tot.spend,tot.orders),cvr:safe(tot.orders*100,tot.clicks)});
+
+  const isC=tab==='creative';
+  let html=`<div class="table-wrap"><table><thead><tr>`;
+  if(isC) html+=`<th class="preview-col">Preview</th>`;
+  html+=`<th>${lbl}</th>${COLS.map(c=>`<th data-r>${c.l}</th>`).join('')}</tr></thead><tbody>`;
+
+  grouped.forEach((r,i)=>{
+    html+=`<tr>`;
+    if(isC){
+      const aid=adIdsByCreative[r.key]||r.adId||'';
+      const cached=creativeCache[r.key];
+      if(cached){
+        const safeName = r.key.replace(/\\\\/g,'\\\\\\\\').replace(/'/g,"\\\\'");
+        if(cached.type==='video'){
+          const th = cached.thumbUrl||'';
+          html+=`<td class="preview-col"><div class="thumb-wrap"><img class="thumb" src="${th}" style="cursor:pointer" onclick="openModal('video','${cached.url.replace(/'/g,"\\'")}','${safeName}')"/><div class="play-badge"><svg width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="11" fill="rgba(0,0,0,0.45)"/><polygon points="8.5,7 16,11 8.5,15" fill="white"/></svg></div></div></td>`;
+        } else {
+          html+=`<td class="preview-col"><img class="thumb" src="${cached.url}" onclick="openModal('image','${cached.url.replace(/'/g,"\\'")}','${safeName}')"/></td>`;
+        }
+      }
+      else{ html+=`<td class="preview-col" id="th-${i}"><div class="thumb-ph">◻</div></td>`; if(aid) loadThumb(i,r.key,aid); }
+    }
+    html+=`<td title="${r.key}">${r.key}</td>${COLS.map(c=>`<td data-r>${c.f(r[c.k])}</td>`).join('')}</tr>`;
+  });
+
+  html+=`</tbody><tfoot><tr>`;
+  if(isC) html+=`<td></td>`;
+  html+=`<td>Total</td>${COLS.map(c=>`<td data-r>${c.f(tot[c.k])}</td>`).join('')}</tr></tfoot></table></div>`;
+  document.getElementById('table-area').innerHTML=html;
+}
+
+function showTab(tab){
+  currentTab=tab;
+  document.querySelectorAll('.tab-btn').forEach((b,i)=>{
+    b.classList.toggle('active',['day','week','campaign','creative','copy','lp','product','batch','creatorType'][i]===tab);
+  });
+  if(rawData.length) renderTable(getFiltered(),tab);
+}
+
+// ── Modal ─────────────────────────────────────────────────────────
+function openModal(type, url, name){
+  const media = document.getElementById('modal-media');
+  if(type==='video'){
+    // Use a blob approach or direct src — also set crossOrigin
+    const v = document.createElement('video');
+    v.className = 'modal-video';
+    v.controls = true;
+    v.autoplay = true;
+    v.playsInline = true;
+    v.preload = 'auto';
+    v.style.width = '100%';
+    // Try direct src first
+    v.src = url;
+    v.onerror = () => {
+      // If direct playback fails, show a fallback message with open link
+      media.innerHTML = `<div style="padding:24px;text-align:center;color:var(--muted)">
+        <div style="font-size:14px;margin-bottom:12px;">Video playback blocked by browser security.</div>
+        <a href="${url}" target="_blank" rel="noopener" style="color:var(--accent);font-size:13px;text-decoration:underline;">Open video in new tab ↗</a>
+      </div>`;
+    };
+    media.innerHTML = '';
+    media.appendChild(v);
+  } else if(type==='video-link'){
+    // No direct URL available — show thumbnail with link
+    const cached = Object.values(creativeCache).find(a=>a&&a.url===url);
+    const thumb = cached?.thumbUrl || '';
+    media.innerHTML = `<div style="position:relative;cursor:pointer" onclick="window.open('${url}','_blank')">
+      ${thumb ? `<img src="${thumb}" style="width:100%;border-radius:8px;opacity:0.85"/>` : ''}
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px">
+        <svg width="48" height="48" viewBox="0 0 48 48"><circle cx="24" cy="24" r="24" fill="rgba(0,0,0,0.55)"/><polygon points="19,15 37,24 19,33" fill="white"/></svg>
+        <span style="color:white;font-size:12px;background:rgba(0,0,0,0.5);padding:4px 10px;border-radius:4px">Click to open video ↗</span>
+      </div>
+    </div>`;
+  } else {
+    media.innerHTML = `<img class="modal-img" src="${url}" alt="" />`;
+  }
+  document.getElementById('modal-name').textContent = name;
+  document.getElementById('modal').classList.add('open');
+}
+function closeModal(){
+  const media = document.getElementById('modal-media');
+  // pause video on close
+  const vid = media.querySelector('video');
+  if(vid){ vid.pause(); }
+  media.innerHTML='';
+  document.getElementById('modal').classList.remove('open');
+}
+
+// ── Status ────────────────────────────────────────────────────────
+function setStatus(html,isErr){
+  const el=document.getElementById('status-msg');
+  el.style.display='block'; el.className='status'+(isErr?' err':'');
+  el.innerHTML=html;
+}
+
+// Date change re-render
+['date-from','date-to'].forEach(id=>document.getElementById(id).addEventListener('change',()=>{ if(rawData.length) renderAll(); }));
+
+// Auto-fetch on load if token present
+window.addEventListener('DOMContentLoaded', ()=>{
+  if(token()){
+    // Show last updated time after fetch
+    const origFetch = window.fetchData;
+    fetchData().then(()=>{
+      const sub = document.getElementById('page-sub');
+      if(sub){
+        const now = new Date();
+        const timeStr = now.toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit'});
+        sub.textContent += ' · Last updated ' + timeStr;
+      }
+    });
+  } else {
+    setStatus('No access token found in URL. Bookmark this page as: <br><code style="font-size:12px">https://your-site.com/meta-report/?token=YOUR_TOKEN</code>', true);
+  }
+});
+</script>
+</body>
+</html>
