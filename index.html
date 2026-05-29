@@ -1035,10 +1035,10 @@ function renderSummary(rows){
     ['Link clicks',         fmt(c),                          'clicks',   false],
     ['Cost / click',        fmtC(safe(s,c)),                 'cpc',      true ],
     ['CTR',                 fmtP(safe(c*100,i)),             'ctr',      false],
-    ['Purchases',           fmt(pur,1),                      'purchases',false],
+    ['Purchases',           fmt(pur,0),                      'purchases',false],
     ['Cost / purchase',     fmtC(safe(s,pur)),               'cpPurch',  true ],
     ['Purchase CVR',        fmtP(safe(pur*100,c)),           'pCvr',     false],
-    ['New cust. orders',    fmt(o,1),                        'orders',   false],
+    ['New cust. orders',    fmt(o,0),                        'orders',   false],
     ['Cost / new cust. order', fmtC(safe(s,o)),              'cpOrder',  true ],
     ['New cust. CVR',       fmtP(safe(o*100,c)),             'cvr',      false],
     ['% New',               fmtP(safe(o*100,pur)),           'pctNew',   false],
@@ -1057,10 +1057,10 @@ const COLS=[
   {k:'clicks',   l:'Link clicks',             f:v=>fmt(v)},
   {k:'cpc',      l:'Cost / click',            f:fmtC},
   {k:'ctr',      l:'CTR',                     f:fmtP},
-  {k:'purchases',l:'Purchases',               f:v=>fmt(v,1)},
+  {k:'purchases',l:'Purchases',               f:v=>fmt(v,0)},
   {k:'cpPurch',  l:'Cost / purchase',         f:fmtC},
   {k:'pCvr',     l:'Purchase CVR',            f:fmtP},
-  {k:'orders',   l:'New cust. orders',        f:v=>fmt(v,1)},
+  {k:'orders',   l:'New cust. orders',        f:v=>fmt(v,0)},
   {k:'cpOrder',  l:'Cost / new cust. order',  f:fmtC},
   {k:'cvr',      l:'New cust. CVR',           f:fmtP},
   {k:'pctNew',   l:'% New',                   f:fmtP}
@@ -1068,7 +1068,7 @@ const COLS=[
 
 function renderTable(rows,tab){
   const cfg={
-    day:      {fn:r=>r.date,               lbl:'Date',               sort:(a,b)=>a.key<b.key?-1:1, adId:false},
+    day:      {fn:r=>r.date,               lbl:'Date',               sort:(a,b)=>b.key<a.key?-1:1, adId:false},
     week:     {fn:r=>weekStart(r.date),    lbl:'Week starting (Sun)', sort:(a,b)=>a.key<b.key?-1:1, adId:false},
     campaign: {fn:r=>r.campaign,           lbl:'Campaign',           sort:(a,b)=>b.spend-a.spend,   adId:false},
     creative: {fn:r=>r.creative||'(none)', lbl:'Creative name',      sort:(a,b)=>b.spend-a.spend,   adId:true},
