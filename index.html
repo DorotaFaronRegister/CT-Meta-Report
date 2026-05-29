@@ -511,17 +511,40 @@ async function fetchData(forceRefresh=false) {
     }
   }
 
-  // ── Live fetch ───────────────────────────────────────────────────
+  // ── Live fetch — one day per request in parallel to avoid 1000-row API cap ──
   setStatus('<div class="dot-loader"><span></span><span></span><span></span></div> Fetching data…');
 
   try {
-    const rows = await fetchAllPages(`act_${AD_ACCOUNT_ID()}/insights`, {
-      level:'ad', time_increment:1,
-      time_range: JSON.stringify({since:df,until:dt}),
-      fields:'date_start,campaign_name,ad_name,ad_id,spend,impressions,inline_link_clicks,actions',
-      action_attribution_windows:'["1d_click"]',
-      limit:500
-    });
+    // Build list of all dates in range
+    const dates = [];
+    const cur = new Date(df + 'T00:00:00');
+    const end = new Date(dt + 'T00:00:00');
+    while(cur <= end) {
+      dates.push(cur.toISOString().slice(0,10));
+      cur.setDate(cur.getDate() + 1);
+    }
+
+    // Fetch all days in parallel (batches of 10 to avoid rate limits)
+    const BATCH = 10;
+    let allRows = [];
+    for(let i = 0; i < dates.length; i += BATCH) {
+      const batchDates = dates.slice(i, i + BATCH);
+      const pct = Math.round((i / dates.length) * 100);
+      setStatus(`<div class="dot-loader"><span></span><span></span><span></span></div> Fetching data… ${pct}%`);
+      const batchResults = await Promise.all(batchDates.map(d =>
+        fetchAllPages(`act_${AD_ACCOUNT_ID()}/insights`, {
+          level: 'ad',
+          time_increment: 1,
+          time_range: JSON.stringify({since: d, until: d}),
+          fields: 'date_start,campaign_name,ad_name,ad_id,spend,impressions,inline_link_clicks,actions',
+          action_attribution_windows: '["1d_click"]',
+          limit: 500
+        }).catch(e => { console.warn('Failed day', d, e); return []; })
+      ));
+      allRows = allRows.concat(...batchResults);
+    }
+
+    const rows = allRows;
 
     rawData = rows.map(row=>{
       const p = parseAdName(row.ad_name);
