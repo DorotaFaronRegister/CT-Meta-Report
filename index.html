@@ -95,6 +95,12 @@
   .s-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
   .s-card .s-label { font-size: 11px; color: var(--muted); font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 8px; }
   .s-card .s-value { font-size: 22px; font-weight: 500; font-family: var(--mono); letter-spacing: -0.02em; }
+  .s-card .s-change { font-size: 11px; font-weight: 500; margin-top: 6px; display: flex; align-items: center; gap: 3px; }
+  .s-change.up   { color: #3ecf8e; }
+  .s-change.down { color: #f06060; }
+  .s-change.flat { color: var(--muted); }
+  .s-change.inv-up   { color: #f06060; } /* higher is worse, e.g. CPM, costs */
+  .s-change.inv-down { color: #3ecf8e; }
 
   /* Tabs */
   .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 0; }
@@ -340,6 +346,67 @@ function syncStateShims() {
   selections = s.selections;
   currentTab = s.currentTab || 'day';
 }
+
+// ── Comparison period data ────────────────────────────────────────
+// Stored per market key
+const compData = {}; // compData[marketCode] = {df, dt, rows}
+
+function getPrevPeriod(df, dt) {
+  const [sy,sm,sd] = df.split('-').map(Number);
+  const [ey,em,ed] = dt.split('-').map(Number);
+  const start = new Date(sy, sm-1, sd);
+  const end   = new Date(ey, em-1, ed);
+  const days  = Math.round((end - start) / 86400000) + 1;
+  const prevEnd   = new Date(start); prevEnd.setDate(prevEnd.getDate() - 1);
+  const prevStart = new Date(prevEnd); prevStart.setDate(prevStart.getDate() - (days - 1));
+  return { df: isoDate(prevStart), dt: isoDate(prevEnd) };
+}
+
+async function fetchDays(df, dt) {
+  const dates = [];
+  const [dfy,dfm,dfd] = df.split('-').map(Number);
+  const [dty,dtm,dtd] = dt.split('-').map(Number);
+  const cur = new Date(dfy, dfm-1, dfd);
+  const end = new Date(dty, dtm-1, dtd);
+  while(cur <= end) { dates.push(isoDate(cur)); cur.setDate(cur.getDate()+1); }
+
+  const BATCH = 10;
+  let allRows = [];
+  for(let i=0; i<dates.length; i+=BATCH){
+    const batch = dates.slice(i, i+BATCH);
+    const results = await Promise.all(batch.map(d =>
+      fetchAllPages(`act_${AD_ACCOUNT_ID()}/insights`, {
+        level:'ad', time_increment:1,
+        time_range: JSON.stringify({since:d, until:d}),
+        fields:'date_start,campaign_name,ad_name,ad_id,spend,impressions,inline_link_clicks,actions,action_values',
+        action_attribution_windows: JSON.stringify(['1d_click']),
+        use_unified_attribution_setting: false,
+        limit:500
+      }).catch(()=>[])
+    ));
+    allRows = allRows.concat(...results);
+  }
+  return allRows;
+}
+
+function summariseRows(rows) {
+  const s=rows.reduce((a,r)=>a+r.spend,0);
+  const i=rows.reduce((a,r)=>a+r.impressions,0);
+  const c=rows.reduce((a,r)=>a+r.clicks,0);
+  const o=rows.reduce((a,r)=>a+r.orders,0);
+  const p=rows.reduce((a,r)=>a+(r.purchases||0),0);
+  return {
+    spend:s, impressions:i, clicks:c, orders:o, purchases:p,
+    cpm:   safe(s,i/1000),
+    cpc:   safe(s,c),
+    ctr:   safe(c*100,i),
+    cpPurch: safe(s,p),
+    pCvr:  safe(p*100,c),
+    cpOrder: safe(s,o),
+    cvr:   safe(o*100,c),
+    pctNew: safe(o*100,p)
+  };
+}
 syncStateShims(); // init for default market
 
 // ── Market switcher ───────────────────────────────────────────────
@@ -528,6 +595,7 @@ async function fetchData(forceRefresh=false) {
       populateDropdowns();
       renderAll();
       btn.disabled=false; btn.textContent='Refresh';
+      fetchComparisonPeriod(df, dt);
       return;
     }
   }
@@ -596,6 +664,8 @@ async function fetchData(forceRefresh=false) {
     const m2=MARKETS[currentMarket]; document.getElementById('page-sub').textContent = `${m2.flag} ${m2.name} · ${df} → ${dt} · ${rawData.length} rows · updated ${timeStr}`;
     populateDropdowns();
     renderAll();
+    // Fetch comparison period in background (don't await — non-blocking)
+    fetchComparisonPeriod(df, dt);
   } catch(e) {
     setStatus('Error: '+e.message, true);
   } finally {
@@ -901,17 +971,83 @@ function renderAll(){
   document.getElementById('status-msg').style.display='none';
 }
 
+async function fetchComparisonPeriod(df, dt) {
+  const prev = getPrevPeriod(df, dt);
+  const key = `${currentMarket}_${prev.df}_${prev.dt}`;
+  if(compData[key]) { renderAll(); return; } // already have it
+  try {
+    const rows = await fetchDays(prev.df, prev.dt);
+    const mapped = rows.map(row=>{
+      const p = parseAdName(row.ad_name);
+      const spend=parseFloat(row.spend)||0, impressions=parseInt(row.impressions)||0, clicks=parseInt(row.inline_link_clicks)||0;
+      let orders=0, purchases=0;
+      if(row.actions){
+        const exactType=`offsite_conversion.custom.${CUSTOM_CONV_ID}`;
+        const c=row.actions.find(a=>a.action_type===exactType);
+        if(c){ const v=c['1d_click']; orders=v!=null?parseFloat(v):0; }
+        const p2=row.actions.find(a=>a.action_type==='omni_purchase'||a.action_type==='purchase');
+        if(p2){ const v=p2['1d_click']; purchases=v!=null?parseFloat(v):0; }
+      }
+      return {spend,impressions,clicks,orders,purchases};
+    });
+    compData[key] = summariseRows(mapped);
+    renderAll(); // re-render with % changes now available
+  } catch(e) { console.warn('Comparison fetch failed', e); }
+}
+
+function getCompSummary(df, dt) {
+  const prev = getPrevPeriod(df, dt);
+  const key = `${currentMarket}_${prev.df}_${prev.dt}`;
+  return compData[key] || null;
+}
+
+function pctChange(curr, prev) {
+  if(!prev || prev === 0) return null;
+  return ((curr - prev) / prev) * 100;
+}
+
+function changeTag(curr, prev, invert=false) {
+  const pct = pctChange(curr, prev);
+  if(pct === null) return '';
+  const abs = Math.abs(pct);
+  const sign = pct >= 0 ? '+' : '−';
+  const arrow = pct >= 0 ? '▲' : '▼';
+  const isGood = invert ? pct < 0 : pct > 0;
+  const isFlat = abs < 0.5;
+  let cls = isFlat ? 'flat' : (isGood ? (invert?'inv-down':'up') : (invert?'inv-up':'down'));
+  return `<div class="s-change ${cls}">${arrow} ${sign}${fmt(abs,1)}% vs prev period</div>`;
+}
+
 function renderSummary(rows){
   const s=rows.reduce((a,r)=>a+r.spend,0),i=rows.reduce((a,r)=>a+r.impressions,0),
         c=rows.reduce((a,r)=>a+r.clicks,0),o=rows.reduce((a,r)=>a+r.orders,0);
   const pur=rows.reduce((a,r)=>a+(r.purchases||0),0);
-  document.getElementById('summary-grid').innerHTML=[
-    ['Spend',fmtC(s)],['Impressions',fmt(i)],['CPM',fmtC(safe(s,i/1000))],
-    ['Link clicks',fmt(c)],['Cost / click',fmtC(safe(s,c))],['CTR',fmtP(safe(c*100,i))],
-    ['Purchases',fmt(pur,1)],['Cost / purchase',fmtC(safe(s,pur))],['Purchase CVR',fmtP(safe(pur*100,c))],
-    ['New cust. orders',fmt(o,1)],['Cost / new cust. order',fmtC(safe(s,o))],['New cust. CVR',fmtP(safe(o*100,c))],
-    ['% New',fmtP(safe(o*100,pur))]
-  ].map(([l,v])=>`<div class="s-card"><div class="s-label">${l}</div><div class="s-value">${v}</div></div>`).join('');
+  const df = document.getElementById('date-from').value;
+  const dt = document.getElementById('date-to').value;
+  const comp = getCompSummary(df, dt);
+  const cur = summariseRows(rows);
+
+  // [label, currentVal formatted, compKey, invert]
+  const cards = [
+    ['Spend',               fmtC(s),                         'spend',    true ],
+    ['Impressions',         fmt(i),                          'impressions',false],
+    ['CPM',                 fmtC(safe(s,i/1000)),            'cpm',      true ],
+    ['Link clicks',         fmt(c),                          'clicks',   false],
+    ['Cost / click',        fmtC(safe(s,c)),                 'cpc',      true ],
+    ['CTR',                 fmtP(safe(c*100,i)),             'ctr',      false],
+    ['Purchases',           fmt(pur,1),                      'purchases',false],
+    ['Cost / purchase',     fmtC(safe(s,pur)),               'cpPurch',  true ],
+    ['Purchase CVR',        fmtP(safe(pur*100,c)),           'pCvr',     false],
+    ['New cust. orders',    fmt(o,1),                        'orders',   false],
+    ['Cost / new cust. order', fmtC(safe(s,o)),              'cpOrder',  true ],
+    ['New cust. CVR',       fmtP(safe(o*100,c)),             'cvr',      false],
+    ['% New',               fmtP(safe(o*100,pur)),           'pctNew',   false],
+  ];
+
+  document.getElementById('summary-grid').innerHTML = cards.map(([l,v,ck,inv])=>{
+    const tag = comp ? changeTag(cur[ck], comp[ck], inv) : '';
+    return `<div class="s-card"><div class="s-label">${l}</div><div class="s-value">${v}</div>${tag}</div>`;
+  }).join('');
 }
 
 const COLS=[
