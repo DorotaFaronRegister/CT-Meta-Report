@@ -44,6 +44,12 @@
   }
   .filter-block input[type="date"]:focus { border-color: var(--accent); }
 
+  /* Date presets */
+  .date-presets { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
+  .preset-btn { padding: 4px 9px; font-size: 11px; font-weight: 500; background: var(--surface2); border: 1px solid var(--border2); border-radius: 5px; color: var(--muted); cursor: pointer; font-family: var(--font); transition: all 0.15s; white-space: nowrap; }
+  .preset-btn:hover { color: var(--text); border-color: var(--accent); }
+  .preset-btn.active { background: rgba(79,143,255,0.15); border-color: var(--accent); color: var(--accent); }
+
   /* Multi-select dropdown */
   .ms-wrap { position: relative; }
   .ms-trigger {
@@ -177,6 +183,12 @@
 
 
     <div class="section-label">Date range</div>
+    <div class="date-presets">
+      <button class="preset-btn" onclick="applyPreset(7)" id="preset-7">7d</button>
+      <button class="preset-btn active" onclick="applyPreset(14)" id="preset-14">14d</button>
+      <button class="preset-btn" onclick="applyPreset(30)" id="preset-30">30d</button>
+      <button class="preset-btn" onclick="applyPreset('mtd')" id="preset-mtd">MTD</button>
+    </div>
     <div class="filter-block">
       <label>From</label>
       <input type="date" id="date-from" />
@@ -363,13 +375,36 @@ function parseAdName(n) {
 }
 
 // ── Dates ─────────────────────────────────────────────────────────
-function initDates() {
+function isoDate(d) { return d.toISOString().slice(0,10); }
+
+function applyPreset(preset) {
   const today = new Date();
   const yesterday = new Date(today); yesterday.setDate(today.getDate()-1);
-  const from = new Date(yesterday); from.setDate(yesterday.getDate()-6);
-  const tf = from.toISOString().slice(0,10), tt = yesterday.toISOString().slice(0,10);
-  document.getElementById('date-from').value = tf;
-  document.getElementById('date-to').value = tt;
+  let from;
+  if(preset === 'mtd') {
+    from = new Date(today.getFullYear(), today.getMonth(), 1);
+  } else {
+    from = new Date(yesterday); from.setDate(yesterday.getDate() - (preset - 1));
+  }
+  document.getElementById('date-from').value = isoDate(from);
+  document.getElementById('date-to').value = isoDate(yesterday);
+
+  // Update active preset button
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+  const btnId = preset === 'mtd' ? 'preset-mtd' : `preset-${preset}`;
+  const btn = document.getElementById(btnId);
+  if(btn) btn.classList.add('active');
+
+  // Re-fetch or re-render if data already loaded
+  if(rawData.length) fetchData(true);
+}
+
+function clearPresetActive() {
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+}
+
+function initDates() {
+  applyPreset(7);
 }
 initDates();
 
@@ -927,8 +962,11 @@ function setStatus(html,isErr){
   el.innerHTML=html;
 }
 
-// Date change re-render
-['date-from','date-to'].forEach(id=>document.getElementById(id).addEventListener('change',()=>{ if(rawData.length) renderAll(); }));
+// Date change re-render — clear preset highlight on manual change
+['date-from','date-to'].forEach(id=>document.getElementById(id).addEventListener('change',()=>{
+  clearPresetActive();
+  if(rawData.length) fetchData(true);
+}));
 
 // Auto-fetch on load if token present
 window.addEventListener('DOMContentLoaded', ()=>{
