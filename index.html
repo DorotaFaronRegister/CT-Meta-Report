@@ -266,14 +266,14 @@ const CUSTOM_CONV_ID = '1177969260913242';
 const BASE = 'https://graph.facebook.com/v19.0';
 
 const MARKETS = {
-  US: { name: 'United States', accountId: '920960531290408',   flag: '🇺🇸' },
-  UK: { name: 'United Kingdom', accountId: '1254534041266387', flag: '🇬🇧' },
-  DE: { name: 'Germany',        accountId: '1303003886419402', flag: '🇩🇪' },
-  AU: { name: 'Australia',      accountId: '1342489372470853', flag: '🇦🇺' },
-  FR: { name: 'France',         accountId: '240696118970624',  flag: '🇫🇷' },
-  IE: { name: 'Ireland',        accountId: '732322845361260',  flag: '🇮🇪' },
-  NL: { name: 'Netherlands',    accountId: '312252235155790',  flag: '🇳🇱' },
-  CA: { name: 'Canada',         accountId: '1199587291371680', flag: '🇨🇦' },
+  US: { name: 'United States', accountId: '920960531290408',   flag: '🇺🇸', symbol: '$',  locale: 'en-US' },
+  UK: { name: 'United Kingdom', accountId: '1254534041266387', flag: '🇬🇧', symbol: '£',  locale: 'en-GB' },
+  DE: { name: 'Germany',        accountId: '1303003886419402', flag: '🇩🇪', symbol: '€',  locale: 'de-DE' },
+  AU: { name: 'Australia',      accountId: '1342489372470853', flag: '🇦🇺', symbol: '£',  locale: 'en-GB' },
+  FR: { name: 'France',         accountId: '240696118970624',  flag: '🇫🇷', symbol: '€',  locale: 'fr-FR' },
+  IE: { name: 'Ireland',        accountId: '732322845361260',  flag: '🇮🇪', symbol: '€',  locale: 'en-IE' },
+  NL: { name: 'Netherlands',    accountId: '312252235155790',  flag: '🇳🇱', symbol: '€',  locale: 'nl-NL' },
+  CA: { name: 'Canada',         accountId: '1199587291371680', flag: '🇨🇦', symbol: '£',  locale: 'en-GB' },
 };
 
 // Per-market state — each market has its own data, cache, and filter selections
@@ -365,8 +365,9 @@ function parseAdName(n) {
 // ── Dates ─────────────────────────────────────────────────────────
 function initDates() {
   const today = new Date();
-  const from = new Date(today); from.setDate(today.getDate()-29);
-  const tf = from.toISOString().slice(0,10), tt = today.toISOString().slice(0,10);
+  const yesterday = new Date(today); yesterday.setDate(today.getDate()-1);
+  const from = new Date(yesterday); from.setDate(yesterday.getDate()-6);
+  const tf = from.toISOString().slice(0,10), tt = yesterday.toISOString().slice(0,10);
   document.getElementById('date-from').value = tf;
   document.getElementById('date-to').value = tt;
 }
@@ -732,8 +733,16 @@ function updateLabel(key,opts){
 }
 
 // ── Data helpers ──────────────────────────────────────────────────
-function fmt(n,d=0){ if(n==null||isNaN(n))return'—'; return Number(n).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}); }
-function fmtC(n){ return(n==null||isNaN(n))?'—':'$'+fmt(n,2); }
+function fmt(n,d=0){
+  if(n==null||isNaN(n))return'—';
+  const locale = MARKETS[currentMarket]?.locale || 'en-US';
+  return Number(n).toLocaleString(locale,{minimumFractionDigits:d,maximumFractionDigits:d});
+}
+function fmtC(n){
+  if(n==null||isNaN(n))return'—';
+  const sym = MARKETS[currentMarket]?.symbol || '$';
+  return sym + fmt(n,2);
+}
 function fmtP(n){ return(n==null||isNaN(n))?'—':fmt(n,2)+'%'; }
 function safe(a,b){ return b?a/b:0; }
 
