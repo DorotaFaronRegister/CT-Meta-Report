@@ -145,6 +145,11 @@
   .dot-loader span:nth-child(3) { animation-delay: 0.4s; }
   @keyframes blink { 0%,80%,100%{opacity:0.2} 40%{opacity:1} }
 
+  /* Conditional formatting */
+  .cf-green { color: #3ecf8e !important; font-weight: 500; }
+  .cf-yellow { color: #f5c842 !important; font-weight: 500; }
+  .cf-red { color: #f06060 !important; font-weight: 500; }
+
   /* Scrollbar */
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -277,16 +282,26 @@
 const CUSTOM_CONV_ID = '1177969260913242';
 const BASE = 'https://graph.facebook.com/v19.0';
 
+// gbpRate: multiply raw API spend (local currency) by this to get GBP display value
+// 1 GBP = 1.2 local currency  =>  local / 1.2 = GBP
+const GBP_RATE = 1 / 1.2; // ~0.8333
+
 const MARKETS = {
-  US: { name: 'United States', accountId: '920960531290408',   flag: '🇺🇸', symbol: '$',  locale: 'en-US' },
-  UK: { name: 'United Kingdom', accountId: '1254534041266387', flag: '🇬🇧', symbol: '£',  locale: 'en-GB' },
-  DE: { name: 'Germany',        accountId: '1303003886419402', flag: '🇩🇪', symbol: '€',  locale: 'de-DE' },
-  AU: { name: 'Australia',      accountId: '1342489372470853', flag: '🇦🇺', symbol: '£',  locale: 'en-GB' },
-  FR: { name: 'France',         accountId: '240696118970624',  flag: '🇫🇷', symbol: '€',  locale: 'fr-FR' },
-  IE: { name: 'Ireland',        accountId: '732322845361260',  flag: '🇮🇪', symbol: '€',  locale: 'en-IE' },
-  NL: { name: 'Netherlands',    accountId: '312252235155790',  flag: '🇳🇱', symbol: '€',  locale: 'nl-NL' },
-  CA: { name: 'Canada',         accountId: '1199587291371680', flag: '🇨🇦', symbol: '£',  locale: 'en-GB' },
+  US: { name: 'United States', accountId: '920960531290408',   flag: '🇺🇸', symbol: '£', locale: 'en-GB', toGBP: GBP_RATE },
+  UK: { name: 'United Kingdom', accountId: '1254534041266387', flag: '🇬🇧', symbol: '£', locale: 'en-GB', toGBP: 1       },
+  DE: { name: 'Germany',        accountId: '1303003886419402', flag: '🇩🇪', symbol: '£', locale: 'en-GB', toGBP: GBP_RATE },
+  AU: { name: 'Australia',      accountId: '1342489372470853', flag: '🇦🇺', symbol: '£', locale: 'en-GB', toGBP: 1       },
+  FR: { name: 'France',         accountId: '240696118970624',  flag: '🇫🇷', symbol: '£', locale: 'en-GB', toGBP: GBP_RATE },
+  IE: { name: 'Ireland',        accountId: '732322845361260',  flag: '🇮🇪', symbol: '£', locale: 'en-GB', toGBP: GBP_RATE },
+  NL: { name: 'Netherlands',    accountId: '312252235155790',  flag: '🇳🇱', symbol: '£', locale: 'en-GB', toGBP: GBP_RATE },
+  CA: { name: 'Canada',         accountId: '1199587291371680', flag: '🇨🇦', symbol: '£', locale: 'en-GB', toGBP: 1       },
 };
+
+// Convert a raw API value (local currency) to GBP for the current market
+function toGBP(n) {
+  const rate = MARKETS[currentMarket]?.toGBP ?? 1;
+  return n * rate;
+}
 
 // Per-market state — each market has its own data, cache, and filter selections
 let currentMarket = 'US';
@@ -789,11 +804,35 @@ function fmt(n,d=0){
 }
 function fmtC(n){
   if(n==null||isNaN(n))return'—';
-  const sym = MARKETS[currentMarket]?.symbol || '$';
-  return sym + fmt(n,2);
+  return '£' + fmt(toGBP(n), 2);
 }
 function fmtP(n){ return(n==null||isNaN(n))?'—':fmt(n,2)+'%'; }
 function safe(a,b){ return b?a/b:0; }
+
+// ── Conditional formatting ─────────────────────────────────────────
+// CPN thresholds in GBP (already in GBP — no conversion needed)
+const CPN_THRESHOLDS = {
+  US: 71, UK: 46, DE: 44, AU: 52, FR: 54, IE: 51, NL: 38, CA: 81
+};
+
+function cpnColor(gbpValue) {
+  const base = CPN_THRESHOLDS[currentMarket] || 71;
+  if (gbpValue <= base)            return 'cf-green';
+  if (gbpValue <= base * 1.05)     return 'cf-yellow';
+  return 'cf-red';
+}
+
+// For orders: rank-based — top third green, bottom third red, middle neutral
+function ordersColor(value, allValues) {
+  if (!allValues.length) return '';
+  const sorted = [...allValues].filter(v=>v>0).sort((a,b)=>a-b);
+  if (!sorted.length) return '';
+  const lo = sorted[Math.floor(sorted.length * 0.33)];
+  const hi = sorted[Math.floor(sorted.length * 0.67)];
+  if (value >= hi) return 'cf-green';
+  if (value <= lo && value > 0) return 'cf-red';
+  return '';
+}
 
 function getFiltered(){
   return rawData.filter(r=>
@@ -823,7 +862,12 @@ function aggregate(rows,keyFn,withAdId){
 }
 
 function weekStart(s){
-  const d=new Date(s+'T00:00:00'); d.setDate(d.getDate()-d.getDay()); return d.toISOString().slice(0,10);
+  // Parse date parts directly to avoid timezone shift issues
+  const [y,m,day] = s.split('-').map(Number);
+  const d = new Date(Date.UTC(y, m-1, day));
+  const dow = d.getUTCDay(); // 0=Sun, 6=Sat
+  d.setUTCDate(d.getUTCDate() - dow);
+  return d.toISOString().slice(0,10);
 }
 
 // ── Render ────────────────────────────────────────────────────────
@@ -884,23 +928,33 @@ function renderTable(rows,tab){
   if(isC) html+=`<th class="preview-col">Preview</th>`;
   html+=`<th>${lbl}</th>${COLS.map(c=>`<th data-r>${c.l}</th>`).join('')}</tr></thead><tbody>`;
 
+  // Pre-compute orders values for relative colouring across rows
+  const allOrderVals = grouped.map(r=>r.orders);
+
   grouped.forEach((r,i)=>{
     html+=`<tr>`;
     if(isC){
       const aid=adIdsByCreative[r.key]||r.adId||'';
       const cached=creativeCache[r.key];
       if(cached){
-        const safeName = r.key.replace(/\\\\/g,'\\\\\\\\').replace(/'/g,"\\\\'");
+        const safeName = r.key.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
         if(cached.type==='video'){
           const th = cached.thumbUrl||'';
-          html+=`<td class="preview-col"><div class="thumb-wrap"><img class="thumb" src="${th}" style="cursor:pointer" onclick="openModal('video','${cached.url.replace(/'/g,"\\'")}','${safeName}')"/><div class="play-badge"><svg width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="11" fill="rgba(0,0,0,0.45)"/><polygon points="8.5,7 16,11 8.5,15" fill="white"/></svg></div></div></td>`;
+          html+=`<td class="preview-col"><div class="thumb-wrap"><img class="thumb" src="${th}" style="cursor:pointer" onclick="openModal('video','${cached.url.replace(/'/g,"\'")}','${safeName}')"/><div class="play-badge"><svg width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="11" fill="rgba(0,0,0,0.45)"/><polygon points="8.5,7 16,11 8.5,15" fill="white"/></svg></div></div></td>`;
         } else {
-          html+=`<td class="preview-col"><img class="thumb" src="${cached.url}" onclick="openModal('image','${cached.url.replace(/'/g,"\\'")}','${safeName}')"/></td>`;
+          html+=`<td class="preview-col"><img class="thumb" src="${cached.url}" onclick="openModal('image','${cached.url.replace(/'/g,"\'")}','${safeName}')"/></td>`;
         }
       }
-      else{ html+=`<td class="preview-col" id="th-${i}"><div class="thumb-ph">◻</div></td>`; if(aid) loadThumb(i,r.key,aid); }
+      else{ html+=`<td class="preview-col" id="th-${i}"><div class="thumb-ph">&#9633;</div></td>`; if(aid) thumbEntries.push({idx:i,name:r.key,adId:aid}); }
     }
-    html+=`<td title="${r.key}">${r.key}</td>${COLS.map(c=>`<td data-r>${c.f(r[c.k])}</td>`).join('')}</tr>`;
+    html+=`<td title="${r.key}">${r.key}</td>`;
+    COLS.forEach(c=>{
+      let cls = '';
+      if(c.k==='orders')  cls = ordersColor(r.orders, allOrderVals);
+      if(c.k==='cpOrder' && r.orders > 0) cls = cpnColor(toGBP(r.cpOrder));
+      html+=`<td data-r class="${cls}">${c.f(r[c.k])}</td>`;
+    });
+    html+=`</tr>`;
   });
 
   html+=`</tbody><tfoot><tr>`;
