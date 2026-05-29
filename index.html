@@ -574,19 +574,18 @@ async function fetchData(forceRefresh=false) {
     rawData = rows.map(row=>{
       const p = parseAdName(row.ad_name);
       const spend=parseFloat(row.spend)||0, impressions=parseInt(row.impressions)||0, clicks=parseInt(row.inline_link_clicks)||0;
-      let orders=0;
+      let orders=0, purchases=0;
       if(row.actions){
-        // Exact match on action_type — offsite_conversion.custom.{ID}
+        // New customer orders — exact custom conversion, 1d_click only
         const exactType = `offsite_conversion.custom.${CUSTOM_CONV_ID}`;
         const c = row.actions.find(a => a.action_type === exactType);
-        if(c){
-          // Strictly use 1d_click — never fall back to .value (which sums all windows)
-          const val = c['1d_click'];
-          orders = val != null ? parseFloat(val) : 0;
-        }
+        if(c){ const val = c['1d_click']; orders = val != null ? parseFloat(val) : 0; }
+        // All purchases (omni_purchase) — 1d_click only
+        const p2 = row.actions.find(a => a.action_type === 'omni_purchase' || a.action_type === 'purchase');
+        if(p2){ const val = p2['1d_click']; purchases = val != null ? parseFloat(val) : 0; }
       }
       if(p.creative&&row.ad_id&&!adIdsByCreative[p.creative]) adIdsByCreative[p.creative]=row.ad_id;
-      return {date:row.date_start, campaign:row.campaign_name||'', adId:row.ad_id||'', creative:p.creative, format:p.format, copy:p.copy, lp:p.lp, product:p.product, batch:p.batch, creatorType:p.creatorType, spend, impressions, clicks, orders};
+      return {date:row.date_start, campaign:row.campaign_name||'', adId:row.ad_id||'', creative:p.creative, format:p.format, copy:p.copy, lp:p.lp, product:p.product, batch:p.batch, creatorType:p.creatorType, spend, impressions, clicks, orders, purchases};
     });
 
     if(!rawData.length){ setStatus('No data returned for this date range.',true); btn.disabled=false; btn.textContent='Fetch data'; return; }
@@ -867,13 +866,19 @@ function aggregate(rows,keyFn,withAdId){
   const map={};
   rows.forEach(r=>{
     const k=keyFn(r);
-    if(!map[k]) map[k]={key:k,spend:0,impressions:0,clicks:0,orders:0,adId:withAdId?r.adId:null};
-    map[k].spend+=r.spend; map[k].impressions+=r.impressions; map[k].clicks+=r.clicks; map[k].orders+=r.orders;
+    if(!map[k]) map[k]={key:k,spend:0,impressions:0,clicks:0,orders:0,purchases:0,adId:withAdId?r.adId:null};
+    map[k].spend+=r.spend; map[k].impressions+=r.impressions; map[k].clicks+=r.clicks;
+    map[k].orders+=r.orders; map[k].purchases+=(r.purchases||0);
   });
   return Object.values(map).map(g=>({...g,
-    cpm:safe(g.spend,g.impressions/1000),cpc:safe(g.spend,g.clicks),
-    ctr:safe(g.clicks*100,g.impressions),cpOrder:safe(g.spend,g.orders),
-    cvr:safe(g.orders*100,g.clicks)
+    cpm:     safe(g.spend,g.impressions/1000),
+    cpc:     safe(g.spend,g.clicks),
+    ctr:     safe(g.clicks*100,g.impressions),
+    cpOrder: safe(g.spend,g.orders),
+    cvr:     safe(g.orders*100,g.clicks),
+    cpPurch: safe(g.spend,g.purchases),
+    pCvr:    safe(g.purchases*100,g.clicks),
+    pctNew:  safe(g.orders*100,g.purchases)   // % new = new cust orders / purchases
   }));
 }
 
@@ -899,23 +904,30 @@ function renderAll(){
 function renderSummary(rows){
   const s=rows.reduce((a,r)=>a+r.spend,0),i=rows.reduce((a,r)=>a+r.impressions,0),
         c=rows.reduce((a,r)=>a+r.clicks,0),o=rows.reduce((a,r)=>a+r.orders,0);
+  const pur=rows.reduce((a,r)=>a+(r.purchases||0),0);
   document.getElementById('summary-grid').innerHTML=[
     ['Spend',fmtC(s)],['Impressions',fmt(i)],['CPM',fmtC(safe(s,i/1000))],
     ['Link clicks',fmt(c)],['Cost / click',fmtC(safe(s,c))],['CTR',fmtP(safe(c*100,i))],
-    ['New cust. orders',fmt(o,1)],['Cost / order',fmtC(safe(s,o))],['Conv. rate',fmtP(safe(o*100,c))]
+    ['Purchases',fmt(pur,1)],['Cost / purchase',fmtC(safe(s,pur))],['Purchase CVR',fmtP(safe(pur*100,c))],
+    ['New cust. orders',fmt(o,1)],['Cost / new cust. order',fmtC(safe(s,o))],['New cust. CVR',fmtP(safe(o*100,c))],
+    ['% New',fmtP(safe(o*100,pur))]
   ].map(([l,v])=>`<div class="s-card"><div class="s-label">${l}</div><div class="s-value">${v}</div></div>`).join('');
 }
 
 const COLS=[
-  {k:'spend',    l:'Spend',           f:fmtC},
-  {k:'impressions',l:'Impressions',   f:v=>fmt(v)},
-  {k:'cpm',      l:'CPM',             f:fmtC},
-  {k:'clicks',   l:'Link clicks',     f:v=>fmt(v)},
-  {k:'cpc',      l:'Cost / click',    f:fmtC},
-  {k:'ctr',      l:'CTR',             f:fmtP},
-  {k:'orders',   l:'New cust. orders',f:v=>fmt(v,1)},
-  {k:'cpOrder',  l:'Cost / order',    f:fmtC},
-  {k:'cvr',      l:'Conv. rate',      f:fmtP}
+  {k:'spend',    l:'Spend',                   f:fmtC},
+  {k:'impressions',l:'Impressions',           f:v=>fmt(v)},
+  {k:'cpm',      l:'CPM',                     f:fmtC},
+  {k:'clicks',   l:'Link clicks',             f:v=>fmt(v)},
+  {k:'cpc',      l:'Cost / click',            f:fmtC},
+  {k:'ctr',      l:'CTR',                     f:fmtP},
+  {k:'purchases',l:'Purchases',               f:v=>fmt(v,1)},
+  {k:'cpPurch',  l:'Cost / purchase',         f:fmtC},
+  {k:'pCvr',     l:'Purchase CVR',            f:fmtP},
+  {k:'orders',   l:'New cust. orders',        f:v=>fmt(v,1)},
+  {k:'cpOrder',  l:'Cost / new cust. order',  f:fmtC},
+  {k:'cvr',      l:'New cust. CVR',           f:fmtP},
+  {k:'pctNew',   l:'% New',                   f:fmtP}
 ];
 
 function renderTable(rows,tab){
@@ -936,8 +948,13 @@ function renderTable(rows,tab){
 
   if(!grouped.length){ document.getElementById('table-area').innerHTML='<div class="status">No data for this view.</div>'; return; }
 
-  const tot=grouped.reduce((a,r)=>({spend:a.spend+r.spend,impressions:a.impressions+r.impressions,clicks:a.clicks+r.clicks,orders:a.orders+r.orders}),{spend:0,impressions:0,clicks:0,orders:0});
-  Object.assign(tot,{cpm:safe(tot.spend,tot.impressions/1000),cpc:safe(tot.spend,tot.clicks),ctr:safe(tot.clicks*100,tot.impressions),cpOrder:safe(tot.spend,tot.orders),cvr:safe(tot.orders*100,tot.clicks)});
+  const tot=grouped.reduce((a,r)=>({spend:a.spend+r.spend,impressions:a.impressions+r.impressions,clicks:a.clicks+r.clicks,orders:a.orders+r.orders,purchases:a.purchases+(r.purchases||0)}),{spend:0,impressions:0,clicks:0,orders:0,purchases:0});
+  Object.assign(tot,{
+    cpm:safe(tot.spend,tot.impressions/1000),cpc:safe(tot.spend,tot.clicks),
+    ctr:safe(tot.clicks*100,tot.impressions),cpOrder:safe(tot.spend,tot.orders),
+    cvr:safe(tot.orders*100,tot.clicks),cpPurch:safe(tot.spend,tot.purchases),
+    pCvr:safe(tot.purchases*100,tot.clicks),pctNew:safe(tot.orders*100,tot.purchases)
+  });
 
   const isC=tab==='creative';
   let html=`<div class="table-wrap"><table><thead><tr>`;
@@ -966,7 +983,8 @@ function renderTable(rows,tab){
     html+=`<td title="${r.key}">${r.key}</td>`;
     COLS.forEach(c=>{
       let cls = '';
-      if(c.k==='orders')  cls = ordersColor(r.orders, allOrderVals);
+      if(c.k==='orders')   cls = ordersColor(r.orders, allOrderVals);
+      if(c.k==='purchases') cls = ordersColor(r.purchases, grouped.map(x=>x.purchases));
       if(c.k==='cpOrder' && r.orders > 0) cls = cpnColor(toGBP(r.cpOrder));
       html+=`<td data-r class="${cls}">${c.f(r[c.k])}</td>`;
     });
