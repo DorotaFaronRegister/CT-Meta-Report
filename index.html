@@ -425,36 +425,27 @@ async function graphGet(path, params={}) {
 // Fetch all pages in parallel once we know the cursors
 async function fetchAllPages(path, params={}) {
   let all = [];
-  // First page
-  const first = await graphGet(path, params);
-  all = all.concat(first.data||[]);
 
-  // Collect remaining pages — fetch up to 5 at a time concurrently
+  // Page 1 via authenticated graphGet
+  const first = await graphGet(path, params);
+  all = all.concat(first.data || []);
+
+  // Subsequent pages: follow next cursors sequentially
+  // (Meta pagination cursors encode the previous response — they must be followed in order)
   let next = first.paging?.next;
-  let batch = [];
-  let pg = 0;
-  while(next && pg < 40) {
-    batch.push(next);
-    // peek ahead: we don't know next cursor until we fetch, so fetch batch of 5 sequentially
-    // but fire them concurrently
-    if(batch.length >= 5 || !next) {
-      const results = await Promise.all(batch.map(u => fetch(u).then(r=>r.json())));
-      for(const j of results) {
-        if(j.error) { next=null; break; }
-        all = all.concat(j.data||[]);
-        next = j.paging?.next;
-      }
-      batch = [];
-    }
-    pg++;
-    if(batch.length===0 && next) { batch.push(next); }
-    else break;
+  let guard = 0;
+  while (next && guard < 100) {
+    guard++;
+    // Append token to cursor URL (it's already in the URL from Meta but re-adding is safe)
+    const sep = next.includes('?') ? '&' : '?';
+    const authedNext = next.includes('access_token=') ? next : next + sep + 'access_token=' + encodeURIComponent(_token);
+    const r = await fetch(authedNext);
+    const j = await r.json();
+    if (j.error) { console.error('Pagination error:', j.error.message); break; }
+    all = all.concat(j.data || []);
+    next = j.paging?.next || null;
   }
-  // flush remaining
-  if(batch.length){
-    const results = await Promise.all(batch.map(u => fetch(u).then(r=>r.json())));
-    for(const j of results){ if(!j.error) all=all.concat(j.data||[]); }
-  }
+
   return all;
 }
 
