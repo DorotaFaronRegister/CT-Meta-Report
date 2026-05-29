@@ -560,8 +560,9 @@ async function fetchData(forceRefresh=false) {
           level: 'ad',
           time_increment: 1,
           time_range: JSON.stringify({since: d, until: d}),
-          fields: 'date_start,campaign_name,ad_name,ad_id,spend,impressions,inline_link_clicks,actions',
-          action_attribution_windows: '["1d_click"]',
+          fields: 'date_start,campaign_name,ad_name,ad_id,spend,impressions,inline_link_clicks,actions,action_values',
+          action_attribution_windows: JSON.stringify(['1d_click']),
+          use_unified_attribution_setting: false,
           limit: 500
         }).catch(e => { console.warn('Failed day', d, e); return []; })
       ));
@@ -575,8 +576,14 @@ async function fetchData(forceRefresh=false) {
       const spend=parseFloat(row.spend)||0, impressions=parseInt(row.impressions)||0, clicks=parseInt(row.inline_link_clicks)||0;
       let orders=0;
       if(row.actions){
-        const c=row.actions.find(a=>a.action_type?.includes(CUSTOM_CONV_ID));
-        if(c) orders=parseFloat(c['1d_click']??c.value??0);
+        // Exact match on action_type — offsite_conversion.custom.{ID}
+        const exactType = `offsite_conversion.custom.${CUSTOM_CONV_ID}`;
+        const c = row.actions.find(a => a.action_type === exactType);
+        if(c){
+          // Strictly use 1d_click — never fall back to .value (which sums all windows)
+          const val = c['1d_click'];
+          orders = val != null ? parseFloat(val) : 0;
+        }
       }
       if(p.creative&&row.ad_id&&!adIdsByCreative[p.creative]) adIdsByCreative[p.creative]=row.ad_id;
       return {date:row.date_start, campaign:row.campaign_name||'', adId:row.ad_id||'', creative:p.creative, format:p.format, copy:p.copy, lp:p.lp, product:p.product, batch:p.batch, creatorType:p.creatorType, spend, impressions, clicks, orders};
