@@ -143,10 +143,32 @@
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+  /* Market nav */
+  .market-nav { display: flex; align-items: center; gap: 2px; padding: 0 36px; background: var(--surface); border-bottom: 1px solid var(--border); height: 44px; overflow-x: auto; flex-shrink: 0; }
+  .market-nav::-webkit-scrollbar { height: 3px; }
+  .market-btn { padding: 6px 16px; font-size: 13px; font-weight: 500; color: var(--muted); background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; font-family: var(--font); white-space: nowrap; height: 44px; transition: color 0.15s; }
+  .market-btn:hover { color: var(--text); }
+  .market-btn.active { color: var(--text); border-bottom-color: var(--accent); }
+  .market-flag { margin-right: 5px; font-size: 15px; }
+
+  /* Adjust layout to account for top nav */
+  body { display: flex; flex-direction: column; }
+  .shell { flex: 1; }
 </style>
 </head>
 <body>
 
+<nav class="market-nav" id="market-nav">
+  <button class="market-btn active" onclick="switchMarket('US')" id="mbtn-US"><span class="market-flag">🇺🇸</span>US</button>
+  <button class="market-btn" onclick="switchMarket('UK')" id="mbtn-UK"><span class="market-flag">🇬🇧</span>UK</button>
+  <button class="market-btn" onclick="switchMarket('DE')" id="mbtn-DE"><span class="market-flag">🇩🇪</span>Germany</button>
+  <button class="market-btn" onclick="switchMarket('AU')" id="mbtn-AU"><span class="market-flag">🇦🇺</span>Australia</button>
+  <button class="market-btn" onclick="switchMarket('FR')" id="mbtn-FR"><span class="market-flag">🇫🇷</span>France</button>
+  <button class="market-btn" onclick="switchMarket('IE')" id="mbtn-IE"><span class="market-flag">🇮🇪</span>Ireland</button>
+  <button class="market-btn" onclick="switchMarket('NL')" id="mbtn-NL"><span class="market-flag">🇳🇱</span>Netherlands</button>
+  <button class="market-btn" onclick="switchMarket('CA')" id="mbtn-CA"><span class="market-flag">🇨🇦</span>Canada</button>
+</nav>
 <div class="shell">
   <!-- SIDEBAR -->
   <aside class="sidebar">
@@ -206,7 +228,7 @@
   <main class="main">
     <div class="page-header">
       <div class="page-title">Performance Report</div>
-      <div class="page-sub" id="page-sub">Account 920960531290408</div>
+      <div class="page-sub" id="page-sub">Select a market and click Refresh</div>
     </div>
 
     <div class="summary-grid" id="summary-grid" style="display:none"></div>
@@ -240,17 +262,90 @@
 </div>
 
 <script>
-const AD_ACCOUNT_ID = '920960531290408';
 const CUSTOM_CONV_ID = '1177969260913242';
 const BASE = 'https://graph.facebook.com/v19.0';
 
-let rawData = [];
-let currentTab = 'day';
-let adIdsByCreative = {};
-let creativeCache = {}; // stores {type:'image'|'video', url:string, thumbUrl:string|null}
+const MARKETS = {
+  US: { name: 'United States', accountId: '920960531290408',   flag: '🇺🇸' },
+  UK: { name: 'United Kingdom', accountId: '1254534041266387', flag: '🇬🇧' },
+  DE: { name: 'Germany',        accountId: '1303003886419402', flag: '🇩🇪' },
+  AU: { name: 'Australia',      accountId: '1342489372470853', flag: '🇦🇺' },
+  FR: { name: 'France',         accountId: '240696118970624',  flag: '🇫🇷' },
+  IE: { name: 'Ireland',        accountId: '732322845361260',  flag: '🇮🇪' },
+  NL: { name: 'Netherlands',    accountId: '312252235155790',  flag: '🇳🇱' },
+  CA: { name: 'Canada',         accountId: '1199587291371680', flag: '🇨🇦' },
+};
+
+// Per-market state — each market has its own data, cache, and filter selections
+let currentMarket = 'US';
+function AD_ACCOUNT_ID() { return MARKETS[currentMarket].accountId; }
+
+// Per-market isolated state
+const marketState = {};
+function getState() {
+  if(!marketState[currentMarket]) {
+    marketState[currentMarket] = {
+      rawData: [],
+      adIdsByCreative: {},
+      creativeCache: {},
+      currentTab: 'day',
+      selections: Object.fromEntries(FILTER_KEYS.map(k=>[k,new Set()]))
+    };
+  }
+  return marketState[currentMarket];
+}
+
+// Proxy getters/setters so existing code works unchanged
+function getRawData() { return getState().rawData; }
+function setRawData(v) { getState().rawData = v; }
 
 const FILTER_KEYS = ['campaign','creative','format','copy','lp','product','batch','creatorType'];
-const selections = Object.fromEntries(FILTER_KEYS.map(k=>[k,new Set()]));
+
+let currentTab = 'day';
+// ── Per-market state shims (so existing code works unchanged) ────
+// These are re-evaluated on each market switch
+let rawData, adIdsByCreative, creativeCache, selections;
+function syncStateShims() {
+  const s = getState();
+  rawData = s.rawData;
+  adIdsByCreative = s.adIdsByCreative;
+  creativeCache = s.creativeCache;
+  selections = s.selections;
+  currentTab = s.currentTab || 'day';
+}
+syncStateShims(); // init for default market
+
+// ── Market switcher ───────────────────────────────────────────────
+function switchMarket(code) {
+  if(code === currentMarket) return;
+  currentMarket = code;
+  syncStateShims();
+
+  // Update nav active state
+  document.querySelectorAll('.market-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('mbtn-'+code).classList.add('active');
+
+  // Update page title
+  const m = MARKETS[code];
+  document.querySelector('.page-title').textContent = m.flag + ' ' + m.name + ' — Performance Report';
+
+  // Reset dropdowns
+  FILTER_KEYS.forEach(k => buildDropdown(k, []));
+
+  const s = getState();
+  if(s.rawData.length) {
+    // Already have data for this market — just re-render
+    populateDropdowns();
+    renderAll();
+  } else {
+    // No data yet — auto-fetch
+    document.getElementById('summary-grid').style.display='none';
+    document.getElementById('tabs-area').style.display='none';
+    document.getElementById('page-sub').textContent = m.flag + ' ' + m.name;
+    setStatus('<div class="dot-loader"><span></span><span></span><span></span></div> Loading '+m.name+'…');
+    fetchData(false);
+  }
+}
 
 // ── Ad name parser ────────────────────────────────────────────────
 // Market_AudienceType_Audience_Placement_Gender_Age_Creative_Format_Copy_OS_Opt_LP_Bid_ProductSet_Source
@@ -328,12 +423,12 @@ async function fetchAllPages(path, params={}) {
 }
 
 // ── LocalStorage cache ────────────────────────────────────────────
-const CACHE_KEY = `meta_report_${AD_ACCOUNT_ID}`;
+function CACHE_KEY() { return `meta_report_${AD_ACCOUNT_ID()}`; }
 const CACHE_TTL_MS = 23 * 60 * 60 * 1000; // 23 hours
 
 function saveCache(df, dt, rows) {
   try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify({
+    localStorage.setItem(CACHE_KEY(), JSON.stringify({
       df, dt, rows, savedAt: Date.now()
     }));
   } catch(e) { console.warn('Cache save failed', e); }
@@ -341,7 +436,7 @@ function saveCache(df, dt, rows) {
 
 function loadCache(df, dt) {
   try {
-    const raw = localStorage.getItem(CACHE_KEY);
+    const raw = localStorage.getItem(CACHE_KEY());
     if(!raw) return null;
     const c = JSON.parse(raw);
     if(c.df !== df || c.dt !== dt) return null; // different date range
@@ -372,16 +467,16 @@ async function fetchData(forceRefresh=false) {
   btn.disabled=true; btn.textContent='Loading…';
   document.getElementById('summary-grid').style.display='none';
   document.getElementById('tabs-area').style.display='none';
-  creativeCache={}; adIdsByCreative={};
+  getState().creativeCache={}; getState().adIdsByCreative={}; syncStateShims();
 
   // ── Try cache first ──────────────────────────────────────────────
   if(!forceRefresh) {
     const cached = loadCache(df, dt);
     if(cached) {
-      rawData = cached.rows;
+      getState().rawData = cached.rows; syncStateShims();
       rawData.forEach(r => { if(r.creative&&r.adId&&!adIdsByCreative[r.creative]) adIdsByCreative[r.creative]=r.adId; });
       const age = cacheAgeLabel(cached.savedAt);
-      document.getElementById('page-sub').textContent = `Account ${AD_ACCOUNT_ID} · ${df} → ${dt} · ${rawData.length} rows · cached ${age}`;
+      const m=MARKETS[currentMarket]; document.getElementById('page-sub').textContent = `${m.flag} ${m.name} · ${df} → ${dt} · ${rawData.length} rows · cached ${age}`;
       populateDropdowns();
       renderAll();
       btn.disabled=false; btn.textContent='Refresh';
@@ -393,7 +488,7 @@ async function fetchData(forceRefresh=false) {
   setStatus('<div class="dot-loader"><span></span><span></span><span></span></div> Fetching data…');
 
   try {
-    const rows = await fetchAllPages(`act_${AD_ACCOUNT_ID}/insights`, {
+    const rows = await fetchAllPages(`act_${AD_ACCOUNT_ID()}/insights`, {
       level:'ad', time_increment:1,
       time_range: JSON.stringify({since:df,until:dt}),
       fields:'date_start,campaign_name,ad_name,ad_id,spend,impressions,inline_link_clicks,actions',
@@ -415,10 +510,10 @@ async function fetchData(forceRefresh=false) {
 
     if(!rawData.length){ setStatus('No data returned for this date range.',true); btn.disabled=false; btn.textContent='Fetch data'; return; }
 
-    saveCache(df, dt, rawData);
+    getState().rawData = rawData; saveCache(df, dt, rawData);
     const now = new Date();
     const timeStr = now.toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit'});
-    document.getElementById('page-sub').textContent = `Account ${AD_ACCOUNT_ID} · ${df} → ${dt} · ${rawData.length} rows · updated ${timeStr}`;
+    const m2=MARKETS[currentMarket]; document.getElementById('page-sub').textContent = `${m2.flag} ${m2.name} · ${df} → ${dt} · ${rawData.length} rows · updated ${timeStr}`;
     populateDropdowns();
     renderAll();
   } catch(e) {
@@ -492,7 +587,7 @@ async function getCreativeAsset(creativeName, adId) {
     const tryHash = async (hash) => {
       if(!hash) return null;
       try {
-        const d = await graphGet(`act_${AD_ACCOUNT_ID}/adimages`, {hashes:JSON.stringify([hash]),fields:'url'});
+        const d = await graphGet(`act_${AD_ACCOUNT_ID()}/adimages`, {hashes:JSON.stringify([hash]),fields:'url'});
         return d?.data?.[0]?.url || null;
       } catch { return null; }
     };
@@ -760,7 +855,7 @@ function renderTable(rows,tab){
 }
 
 function showTab(tab){
-  currentTab=tab;
+  getState().currentTab=tab; currentTab=tab;
   document.querySelectorAll('.tab-btn').forEach((b,i)=>{
     b.classList.toggle('active',['day','week','campaign','creative','copy','lp','product','batch','creatorType'][i]===tab);
   });
@@ -828,9 +923,8 @@ function setStatus(html,isErr){
 
 // Auto-fetch on load if token present
 window.addEventListener('DOMContentLoaded', ()=>{
+  document.querySelector('.page-title').textContent = '🇺🇸 United States — Performance Report';
   if(token()){
-    // Show last updated time after fetch
-    const origFetch = window.fetchData;
     fetchData(false).then(()=>{
       const sub = document.getElementById('page-sub');
       if(sub){
@@ -841,6 +935,7 @@ window.addEventListener('DOMContentLoaded', ()=>{
     });
   } else {
     setStatus('No access token found in URL. Bookmark this page as: <br><code style="font-size:12px">https://your-site.com/meta-report/?token=YOUR_TOKEN</code>', true);
+  document.querySelector('.page-title').textContent = '🇺🇸 United States — Performance Report';
   }
 });
 </script>
